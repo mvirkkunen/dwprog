@@ -4,9 +4,12 @@
 MAX_ADDRESS = 0xffff
 
 class memlist(list):
+    def __init__(self, max_size):
+        self._max_size = max_size
+
     def write(self, offset, values):
-        if offset + len(values) > MAX_ADDRESS:
-            raise Exception("Max memory address exceeded")
+        if offset + len(values) > self._max_size:
+            raise Exception("Binary does not fit in memory")
 
         while len(self) < offset + len(values):
             self.append(None)
@@ -14,9 +17,7 @@ class memlist(list):
         for i, b in enumerate(values):
             self[offset + i] = b
 
-def parse_hex(f):
-    mem = memlist()
-
+def parse_hex(mem, f):
     for line in f:
         if line[0:1] != b":":
             raise Exception("Invalid hex line prefix")
@@ -41,13 +42,9 @@ def parse_hex(f):
         else:
             raise Exception("Unknown hex line")
 
-    return mem
-
-def parse_elf(f):
+def parse_elf(mem, f):
     from elftools.elf.elffile import ELFFile
     from elftools.elf.enums import ENUM_E_MACHINE
-
-    mem = memlist()
 
     elf = ELFFile(f)
 
@@ -58,16 +55,29 @@ def parse_elf(f):
         if s["p_filesz"] > 0:
             mem.write(s["p_paddr"], s.data())
 
-    return mem
-
-def parse_binary(filename):
+def parse_binary(filename, flash_size, flash_pagesize):
     with open(filename, "rb") as f:
         magic = f.read(9)
         f.seek(0)
 
-        if magic[:4] == b"\x7fELF":
-            return parse_elf(f)
-        elif len(magic) == 9 and magic[0:1] == b":" and magic[7:9] in (b"00", b"01"):
-            return parse_hex(f)
+        mem = memlist(flash_size)
 
-        raise Exception("Unknown binary file type.")
+        if magic[:4] == b"\x7fELF":
+            parse_elf(mem, f)
+        elif len(magic) == 9 and magic[0:1] == b":" and magic[7:9] in (b"00", b"01"):
+            parse_hex(mem, f)
+        else:
+            raise Exception("Unknown binary file type.")
+
+        pages = []
+
+        for start in range(0, flash_size, flash_pagesize):
+            page = mem[start:start+flash_pagesize]
+
+            if any(b is not None for b in page):
+                pagebytes = bytes(0 if b is None else b for b in page)
+                pagebytes += b"\00" * max(0, flash_pagesize - len(pagebytes))
+
+                pages.append((start, pagebytes))
+
+        return pages

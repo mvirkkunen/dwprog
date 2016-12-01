@@ -31,6 +31,30 @@ def cmd_readsig(args):
     dw.open()
     print("Device signature: {:04x}".format(dw.read_signature()))
 
+def do_verify(dev, pages):
+    print("Verifying {0} pages ({1} bytes) against target.".format(
+        len(pages), len(pages) * dev.flash_pagesize))
+
+    start_time = time.time()
+
+    for i, (start, pagebytes) in enumerate(pages):
+        progress = BAR_LEN * (i + 1) // len(pages)
+
+        print("\r[{0}] page {1}/{2}...".format(
+            ("#" * progress) + " " * (BAR_LEN - progress),
+            i + 1,
+            len(pages)), end="")
+        sys.stdout.flush()
+
+        devbytes = dw.read_flash(start, dev.flash_pagesize)
+
+        if devbytes != pagebytes:
+            print("\nERROR! Mismatch at 0x{:04x}-0x{:04x}.".format(start, start + dev.flash_pagesize))
+            return False
+
+    print("\nNo errors detected! Verifying took {0}ms.".format(round((time.time() - start_time) * 1000)))
+    return True
+
 def cmd_flash(args):
     if not args.device:
         panic("Device must be specified for programming.")
@@ -43,25 +67,67 @@ def cmd_flash(args):
     # parse input binary file
 
     try:
-        mem = parse_binary(args.file)
+        pages = parse_binary(args.file, dev.flash_size, dev.flash_pagesize)
     except Exception as e:
         panic(e.strerror)
 
-    # convert binary file to a list of pages to write
-
-    pages = []
-
-    for start in range(0, dev.flash_size, dev.flash_pagesize):
-        page = mem[start:start+dev.flash_pagesize]
-
-        if any(b is not None for b in page):
-            pagebytes = bytes(0 if b is None else b for b in page)
-            pagebytes += b"\00" * max(0, dev.flash_pagesize - len(pagebytes))
-
-            pages.append((start, pagebytes))
-
     print("Writing {0} pages ({1} bytes) to target.".format(
         len(pages), len(pages) * dev.flash_pagesize))
+
+    # open and reset device
+
+    dw.open()
+    dw.reset()
+
+    # ensure device signature is corect
+
+    sig = dw.read_signature()
+    if sig != dev.signature:
+        panic("Device signature mismatch (expected {:04x}, got {:04x})"
+            .format(self.dev.signature, sig))
+
+    start_time = time.time()
+
+    # write page by page
+
+    for i, (start, pagebytes) in enumerate(pages):
+        progress = BAR_LEN * (i + 1) // len(pages)
+
+        print("\r[{0}] page {1}/{2}...".format(
+            ("#" * progress) + " " * (BAR_LEN - progress),
+            i + 1,
+            len(pages)), end="")
+        sys.stdout.flush()
+
+        dw.write_flash_page(dev, start, pagebytes)
+
+    print("\nDone! Programming took {0}ms.".format(round((time.time() - start_time) * 1000)))
+
+    # verify
+
+    if not args.no_verify:
+        if not do_verify(dev, pages):
+            print("Target left stopped due to verification error.")
+            stop_after_cmd = True
+            return
+
+    dw.reset()
+
+def cmd_verify(args):
+    if not args.device:
+        panic("Device must be specified for programming.")
+
+    if not args.device in devices:
+        panic("Unsupported device: " + args.device)
+
+    dev = devices[args.device]
+
+    # parse input binary file
+
+    try:
+        pages = parse_binary(args.file, dev.flash_size, dev.flash_pagesize)
+    except Exception as e:
+        panic(e.strerror)
 
     start_time = time.time()
 
@@ -77,22 +143,11 @@ def cmd_flash(args):
         panic("Device signature mismatch (expected {:04x}, got {:04x})"
             .format(self.dev.signature, sig))
 
-    # write page by page
+    # verify page by page
 
-    for i, (start, pagebytes) in enumerate(pages):
-        progress = BAR_LEN * (i + 1) // len(pages)
-
-        print("\r[{0}] page {1}/{2}...".format(
-            ("#" * progress) + " " * (BAR_LEN - progress),
-            i + 1,
-            len(pages)), end="")
-        sys.stdout.flush()
-
-        dw.write_flash_page(dev, start, pagebytes)
+    do_verify(dev, pages)
 
     dw.reset()
-
-    print("\nDone! Programming took {0}ms.".format(round((time.time() - start_time) * 1000)))
 
 parser = argparse.ArgumentParser()
 
@@ -118,7 +173,13 @@ preadsig.set_defaults(func=cmd_readsig)
 
 pflash = subp.add_parser("flash", help="flash program to target")
 pflash.add_argument("file", help="file (.hex or .elf) to flash")
+pflash.add_argument("-V", "--no-verify", action="store_true",
+    help="skip verification")
 pflash.set_defaults(func=cmd_flash)
+
+pverify = subp.add_parser("verify", help="verify previously flashed program")
+pverify.add_argument("file", help="file (.hex or .elf) to verify")
+pverify.set_defaults(func=cmd_verify)
 
 args = parser.parse_args()
 if not hasattr(args, "func"):
@@ -128,8 +189,10 @@ if not hasattr(args, "func"):
 
 print("dwprog starting")
 
+stop_after_cmd = args.stop
+
 with DebugWire(FTDIInterface(args.baudrate)) as dw:
     args.func(args)
 
-    if not args.stop:
+    if not stop_after_cmd:
         dw.run()
