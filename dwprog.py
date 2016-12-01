@@ -27,9 +27,17 @@ def cmd_disable(args):
 
     print("debugWIRE is disabled and ISP is enabled until next power cycle.")
 
-def cmd_readsig(args):
+def cmd_identify(args):
+    print("Identifying target device...")
+
     dw.open()
-    print("Device signature: {:04x}".format(dw.read_signature()))
+    dw.reset()
+
+    sig = dw.read_signature()
+
+    dev = next((d for d in devices if d.signature == sig), None)
+
+    print("Target is: {0} (signature 0x{1:04x})".format(dev.name if dev else "Unknown device", sig))
 
 def open_and_get_device(args):
     def open_and_get_signature():
@@ -179,7 +187,7 @@ parser.add_argument("-b", "--baudrate", type=int, default=62500,
 parser.add_argument("-d", "--device",
     help="target device ID")
 parser.add_argument("-s", "--stop", action="store_true",
-    help="leave execution stopped")
+    help="leave target stopped")
 
 subp = parser.add_subparsers()
 
@@ -189,8 +197,8 @@ pdisable.set_defaults(func=cmd_reset)
 pdisable = subp.add_parser("disable", help="disable debugWIRE and enable ISP")
 pdisable.set_defaults(func=cmd_disable)
 
-preadsig = subp.add_parser("readsig", help="read target device signature")
-preadsig.set_defaults(func=cmd_readsig)
+pidentify = subp.add_parser("identify", help="identify target device")
+pidentify.set_defaults(func=cmd_identify)
 
 pflash = subp.add_parser("flash", help="flash program to target")
 pflash.add_argument("file", help="file (.hex or .elf) to flash")
