@@ -41,8 +41,8 @@ class FTDIInterface(BaseInterface):
             self.dev.close()
             self.dev = None
 
-    def stop(self):
-        self._log(">stop")
+    def send_break(self):
+        self._log(">break")
 
         self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 1)
 
@@ -106,8 +106,8 @@ class SerialInterface(BaseInterface):
             self.dev.close()
             self.dev = None
 
-    def stop(self):
-        self._log(">stop")
+    def send_break(self):
+        self._log(">break")
 
         self.dev.send_break(0.002)
 

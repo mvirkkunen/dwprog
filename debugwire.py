@@ -53,7 +53,7 @@ class DebugWire:
     def reset(self):
         """Reset the target device."""
 
-        self.iface.stop()
+        self.iface.send_break()
         #self.iface.write([0x83])
         #self.iface.read(1)
         self.iface.write([CMD_RESET])
@@ -193,7 +193,7 @@ class DebugWire:
             asm.out(dev.reg_spmcsr, 29), # out SPMCSR, r29 ; CTPB | SPMEN
             asm.spm()])                  # spm
 
-        self.iface.stop()
+        self.iface.send_break()
 
         # erase flash page
 
@@ -204,7 +204,7 @@ class DebugWire:
         ])
 
         # wait for erase to complete
-        self.iface.stop()
+        self.iface.send_break()
 
         # write data to buffer
 
@@ -224,4 +224,4 @@ class DebugWire:
             asm.spm()])                  # spm
 
         # wait for write to complete
-        self.iface.stop()
+        self.iface.send_break()
