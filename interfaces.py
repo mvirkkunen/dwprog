@@ -23,10 +23,11 @@ class BaseInterface:
             print(msg)
 
 class FTDIInterface(BaseInterface):
-    def __init__(self, baudrate, enable_log=False):
+    def __init__(self, baudrate, timeout=2, enable_log=False):
         super().__init__(enable_log)
 
         self.baudrate = baudrate
+        self.timeout = timeout
         self.dev = None
 
     def open(self):
@@ -78,16 +79,26 @@ class FTDIInterface(BaseInterface):
 
         self._log(">"+ hexdump(data))
 
+        start = time.time()
+
         nwrite = 0
         while nwrite < len(data):
             nwrite += self.dev.write(data[nwrite:])
 
+            if time.time() - start >= self.timeout:
+                raise Exception("Write timeout.")
+
         self.read(nwrite, _log=False)
 
     def read(self, nread, _log=True):
+        start = time.time()
+
         buf = b""
         while len(buf) < nread:
             buf += self.dev.read(nread - len(buf))
+
+            if time.time() - start >= self.timeout:
+                raise Exception("Write timeout.")
 
         if _log:
             self._log("<" + hexdump(buf))
