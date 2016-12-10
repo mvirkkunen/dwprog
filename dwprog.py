@@ -182,7 +182,7 @@ parser = argparse.ArgumentParser()
 
 #parser.add_argument("-i", "--interface",
 #    help="interface type (serial:/dev/ttyX, ftdi[:device_id])")
-parser.add_argument("-b", "--baudrate", type=int, default=62500,
+parser.add_argument("-b", "--baudrate", type=int, default=None,
     help="communication baudrate (default=62500)")
 parser.add_argument("-d", "--device",
     help="target device ID")

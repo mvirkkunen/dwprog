@@ -33,8 +33,24 @@ class FTDIInterface(BaseInterface):
         from pylibftdi.serial_device import SerialDevice
 
         self.dev = SerialDevice()
-        self.dev.baudrate = self.baudrate
-        self.dev.ftdi_fn.ftdi_usb_purge_rx_buffer()
+
+        if self.baudrate is None:
+            self._detect_baudrate()
+        else:
+            self.dev.baudrate = self.baudrate
+
+        self.dev.read(1024)
+
+    def _detect_baudrate(self):
+        # TODO: Maybe make an actual auto-detection algorithm
+        for guess in [62500, 12500, 7812, 5000, 6250]:
+            self.dev.baudrate = guess
+
+            if self.send_break() == b"\x55":
+                self._log("Baudrate detected as {}".format(guess))
+                return
+
+        raise Exception("Failed to autodetect baudrate.")
 
     def close(self):
         if self.dev:
@@ -49,14 +65,13 @@ class FTDIInterface(BaseInterface):
         time.sleep(2000e-6)
 
         self.dev.ftdi_fn.ftdi_usb_purge_rx_buffer()
-
-        time.sleep(200e-6)
+        self.dev.read(1024)
 
         self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 0)
 
-        self.read(2)
+        time.sleep(2000e-6)
 
-        time.sleep(200e-6)
+        return self.read(1)
 
     def write(self, data):
         data = bytes(data)
@@ -91,6 +106,9 @@ class SerialInterface(BaseInterface):
         self.dev = None
 
     def open(self):
+        if self.baudrate is None:
+            raise Exception("Baud rate must be specified.")
+
         from serial import Serial
 
         self.dev = Serial(
