@@ -3,231 +3,256 @@
 import argparse
 import sys
 import time
-from debugwire import DebugWire
+from debugwire import DebugWire, DWException
 from interfaces import FTDIInterface, SerialInterface
 from devices import devices
 from binparser import parse_binary
 
-BAR_LEN = 50
+class DWProg:
+    BAR_LEN = 50
 
-def panic(msg):
-    print(msg, file=sys.stderr)
-    sys.exit(1)
+    def main(self):
+        parser = argparse.ArgumentParser()
 
-def cmd_reset(args):
-    dw.open()
-    dw.reset()
+        #parser.add_argument("-i", "--interface",
+        #    help="interface type (serial:/dev/ttyX, ftdi[:device_id])")
+        parser.add_argument("-b", "--baudrate", type=int, default=None,
+            help="communication baudrate (default=autodetect)")
+        parser.add_argument("-d", "--device",
+            help="target device ID (default=autodetect)")
+        parser.add_argument("-s", "--stop", action="store_true",
+            help="leave target stopped (default=false)")
+        parser.add_argument("-q", "--quiet", action="count",
+            help="specify once to hide progress bars, twice to hide everything except errors")
 
-    print("Device reset.")
+        subp = parser.add_subparsers()
 
-def cmd_disable(args):
-    dw.open()
-    dw.reset()
-    dw.disable()
+        pdisable = subp.add_parser("reset", help="reset the target")
+        pdisable.set_defaults(func=self.cmd_reset)
 
-    print("debugWIRE is disabled and ISP is enabled until next power cycle.")
+        pdisable = subp.add_parser("disable", help="disable debugWIRE and enable ISP")
+        pdisable.set_defaults(func=self.cmd_disable)
 
-def cmd_identify(args):
-    print("Identifying target device...")
+        pidentify = subp.add_parser("identify", help="identify target device")
+        pidentify.set_defaults(func=self.cmd_identify)
 
-    dw.open()
-    dw.reset()
+        pflash = subp.add_parser("flash", help="flash program to target")
+        pflash.add_argument("file", help="file (.hex or .elf) to flash")
+        pflash.add_argument("-V", "--no-verify", action="store_true",
+            help="skip verification")
+        pflash.set_defaults(func=self.cmd_flash)
 
-    sig = dw.read_signature()
+        pverify = subp.add_parser("verify", help="verify previously flashed program")
+        pverify.add_argument("file", help="file (.hex or .elf) to verify")
+        pverify.set_defaults(func=self.cmd_verify)
 
-    dev = next((d for d in devices if d.signature == sig), None)
+        args = parser.parse_args()
+        if not hasattr(args, "func"):
+            self.log_error("Specify a subcommand.")
+            parser.print_usage()
+            sys.exit(1)
 
-    print("Target is: {0} (signature 0x{1:04x})".format(dev.name if dev else "Unknown device", sig))
+        self._dev = None
+        self.verbosity = 2 - (args.quiet or 0)
+        self.stop_after_cmd = args.stop
+        self.device_id = args.device
 
-def open_and_get_device(args):
-    def open_and_get_signature():
-        dw.open()
-        dw.reset()
+        self.log("dwprog starting")
 
-        return dw.read_signature()
+        try:
+            with DebugWire(FTDIInterface(args.baudrate)) as dw:
+                self._dw = dw
+                self._dw_is_open = False
 
-    if args.device:
-        dev = next((d for d in devices if d.devid == args.device), None)
+                args.func(args)
+                self.log("")
 
-        if not dev:
-            panic("Device '{0}' is not supported.".format(args.device))
+                if not self.stop_after_cmd:
+                    self.log("Starting program on target.")
+                    self.dw.run()
+                else:
+                    self.log("Target was left stopped.")
+        except DWException as ex:
+            self.log_error("ERROR: {}".format(str(ex)))
+            return 1
 
-        sig = open_and_get_signature()
+        self.log("dwprog exiting successfully")
+        return 0
 
-        if sig != dev.signature:
-            panic("Device signature mismatch (expected {0:04x}, got {1:04x})"
-                .format(self.dev.signature, sig))
-    else:
-        print("Auto-detecting target device...")
-        sig = open_and_get_signature()
+    def log(self, msg):
+        if self.verbosity >= 1:
+            print(msg)
+
+    def log_error(self, msg):
+        print(msg, file=sys.stderr)
+
+    def progress_bar(self, current, count):
+        if self.verbosity >= 2:
+            progress = DWProg.BAR_LEN * (current + 1) // count
+
+            print("\r[{0}] page {1}/{2}...".format(
+                ("#" * progress) + " " * (DWProg.BAR_LEN - progress),
+                current + 1,
+                count), end="")
+            sys.stdout.flush()
+
+    @property
+    def dw(self):
+        if not self._dw_is_open:
+            self.log("Opening debugWIRE interface...")
+
+            if not self._dw.iface.baudrate:
+                self.log("Attempting to auto-detect baudrate.")
+
+            baudrate = self._dw.open()
+            self.log("Successfully opened at baudrate {}".format(baudrate))
+            self.log("")
+
+            self._dw_is_open = True
+
+        return self._dw
+
+    @property
+    def dev(self):
+        if not self._dev:
+            self.log("Getting target device properties.")
+
+            if self.device_id:
+                self._dev = next((d for d in devices if d.devid == self.device_id), None)
+
+                if not self._dev:
+                    raise DWException("Device '{0}' is not supported.".format(self.device_id))
+
+                sig = self.dw.read_signature()
+                if sig != self._dev.signature:
+                    raise DWException("Device signature mismatch (expected {0:04x}, got {1:04x})"
+                        .format(self._dev.signature, sig))
+            else:
+                self.log("Auto-detecting target device...")
+
+                sig = self.dw.read_signature()
+
+                self._dev = next((d for d in devices if d.signature == sig), None)
+
+                if not self._dev:
+                    raise DWException("Device with signature {0:04x} is not supported."
+                        .format(sig))
+
+            self.log("Target is: {0} (signature 0x{1:04x})"
+                .format(self._dev.name, self._dev.signature))
+
+        return self._dev
+
+    def cmd_reset(self, args):
+        # opening the interface causes a reset
+        self.dw
+
+        self.log("Device reset.")
+
+    def cmd_disable(self, args):
+        self.dw.disable()
+
+        self.log("debugWIRE is disabled and ISP is enabled until next power cycle.")
+
+    def cmd_identify(self, args):
+        self.log("Identifying target device...")
+
+        sig = self.dw.read_signature()
 
         dev = next((d for d in devices if d.signature == sig), None)
 
-        if not dev:
-            panic("Device with signature {0:04x} is not supported.".format(sig))
+        self.log("Target is: {0} (signature 0x{1:04x})"
+            .format(dev.name if dev else "Unknown device", sig))
 
-    print("Target is: {0} (signature 0x{1:04x})".format(dev.name, dev.signature))
+    def split_into_pages(self, mem):
+        if len(mem) > self.dev.flash_size:
+            raise DWException("Binary too large for target.")
 
-    return dev
+        pages = []
 
-def split_into_pages(mem, dev):
-    if len(mem) > dev.flash_size:
-        panic("Binary too large for target.")
+        for start in range(0, self.dev.flash_size, self.dev.flash_pagesize):
+            page = mem[start:start+self.dev.flash_pagesize]
 
-    pages = []
+            if any(b is not None for b in page):
+                pagebytes = bytes(0 if b is None else b for b in page)
+                pagebytes += b"\00" * max(0, self.dev.flash_pagesize - len(pagebytes))
 
-    for start in range(0, dev.flash_size, dev.flash_pagesize):
-        page = mem[start:start+dev.flash_pagesize]
+                pages.append((start, pagebytes))
 
-        if any(b is not None for b in page):
-            pagebytes = bytes(0 if b is None else b for b in page)
-            pagebytes += b"\00" * max(0, dev.flash_pagesize - len(pagebytes))
+        return pages
 
-            pages.append((start, pagebytes))
+    def do_verify(self, pages):
+        self.log("\nVerifying {0} pages ({1} bytes) against target.".format(
+            len(pages), len(pages) * self.dev.flash_pagesize))
 
-    return pages
+        start_time = time.time()
 
-def do_verify(dev, pages):
-    print("\nVerifying {0} pages ({1} bytes) against target.".format(
-        len(pages), len(pages) * dev.flash_pagesize))
+        for i, (start, pagebytes) in enumerate(pages):
+            self.progress_bar(i, len(pages))
 
-    start_time = time.time()
+            devbytes = self.dw.read_flash(start, self.dev.flash_pagesize)
 
-    for i, (start, pagebytes) in enumerate(pages):
-        progress = BAR_LEN * (i + 1) // len(pages)
+            if devbytes != pagebytes:
+                self.log_error("\nERROR! Mismatch at 0x{:04x}-0x{:04x}."
+                    .format(start, start + self.dev.flash_pagesize))
+                return False
 
-        print("\r[{0}] page {1}/{2}...".format(
-            ("#" * progress) + " " * (BAR_LEN - progress),
-            i + 1,
-            len(pages)), end="")
-        sys.stdout.flush()
+        self.log("\nNo errors detected! Verifying took {0}ms."
+            .format(round((time.time() - start_time) * 1000)))
 
-        devbytes = dw.read_flash(start, dev.flash_pagesize)
+        return True
 
-        if devbytes != pagebytes:
-            print("\nERROR! Mismatch at 0x{:04x}-0x{:04x}.".format(start, start + dev.flash_pagesize))
-            return False
+    def cmd_flash(self, args):
+        # parse input binary file
 
-    print("\nNo errors detected! Verifying took {0}ms.".format(round((time.time() - start_time) * 1000)))
-    return True
-
-def cmd_flash(args):
-    # parse input binary file
-
-    try:
         mem = parse_binary(args.file)
-    except Exception as e:
-        panic(e.strerror)
 
-    # open and check target device
+        # open and check target device
 
-    dev = open_and_get_device(args)
+        pages = self.split_into_pages(mem)
 
-    pages = split_into_pages(mem, dev)
+        self.log("\nWriting {0} pages ({1} bytes) to target.".format(
+            len(pages), len(pages) * self.dev.flash_pagesize))
 
-    print("\nWriting {0} pages ({1} bytes) to target.".format(
-        len(pages), len(pages) * dev.flash_pagesize))
+        start_time = time.time()
 
-    start_time = time.time()
+        # write page by page
 
-    # write page by page
+        for i, (start, pagebytes) in enumerate(pages):
+            self.progress_bar(i, len(pages))
 
-    for i, (start, pagebytes) in enumerate(pages):
-        progress = BAR_LEN * (i + 1) // len(pages)
+            self.dw.write_flash_page(self.dev, start, pagebytes)
 
-        print("\r[{0}] page {1}/{2}...".format(
-            ("#" * progress) + " " * (BAR_LEN - progress),
-            i + 1,
-            len(pages)), end="")
-        sys.stdout.flush()
+        self.log("\nDone! Programming took {0}ms."
+            .format(round((time.time() - start_time) * 1000)))
 
-        dw.write_flash_page(dev, start, pagebytes)
+        # verify
 
-    print("\nDone! Programming took {0}ms.".format(round((time.time() - start_time) * 1000)))
+        if not args.no_verify:
+            if not self.do_verify(pages):
+                self.log("Target will be left stopped due to a verification error.")
+                self.stop_after_cmd = True
+                return
 
-    # verify
+        self.dw.reset()
 
-    if not args.no_verify:
-        if not do_verify(dev, pages):
-            print("Target will be left stopped due to a verification error.")
-            stop_after_cmd = True
-            return
+    def cmd_verify(self, args):
+        # parse input binary file
 
-    dw.reset()
-
-def cmd_verify(args):
-    # parse input binary file
-
-    try:
         mem = parse_binary(args.file)
-    except Exception as e:
-        panic(e.strerror)
 
-    # open and check target device
+        # open and check target device
 
-    dev = open_and_get_device(args)
+        pages = self.split_into_pages(mem)
 
-    pages = split_into_pages(mem, dev)
+        self.log("Writing {0} pages ({1} bytes) to target.".format(
+            len(pages), len(pages) * self.dev.flash_pagesize))
 
-    print("Writing {0} pages ({1} bytes) to target.".format(
-        len(pages), len(pages) * dev.flash_pagesize))
+        # verify page by page
 
-    # verify page by page
+        self.do_verify(pages)
 
-    do_verify(dev, pages)
+        self.dw.reset()
 
-    dw.reset()
-
-parser = argparse.ArgumentParser()
-
-#parser.add_argument("-i", "--interface",
-#    help="interface type (serial:/dev/ttyX, ftdi[:device_id])")
-parser.add_argument("-b", "--baudrate", type=int, default=None,
-    help="communication baudrate (default=62500)")
-parser.add_argument("-d", "--device",
-    help="target device ID")
-parser.add_argument("-s", "--stop", action="store_true",
-    help="leave target stopped")
-
-subp = parser.add_subparsers()
-
-pdisable = subp.add_parser("reset", help="reset the target")
-pdisable.set_defaults(func=cmd_reset)
-
-pdisable = subp.add_parser("disable", help="disable debugWIRE and enable ISP")
-pdisable.set_defaults(func=cmd_disable)
-
-pidentify = subp.add_parser("identify", help="identify target device")
-pidentify.set_defaults(func=cmd_identify)
-
-pflash = subp.add_parser("flash", help="flash program to target")
-pflash.add_argument("file", help="file (.hex or .elf) to flash")
-pflash.add_argument("-V", "--no-verify", action="store_true",
-    help="skip verification")
-pflash.set_defaults(func=cmd_flash)
-
-pverify = subp.add_parser("verify", help="verify previously flashed program")
-pverify.add_argument("file", help="file (.hex or .elf) to verify")
-pverify.set_defaults(func=cmd_verify)
-
-args = parser.parse_args()
-if not hasattr(args, "func"):
-    print("Specify a subcommand.")
-    parser.print_usage()
-    sys.exit(1)
-
-print("dwprog starting")
-
-stop_after_cmd = args.stop
-
-with DebugWire(FTDIInterface(args.baudrate)) as dw:
-    args.func(args)
-    print()
-
-    if not stop_after_cmd:
-        print("Starting program on target.")
-        dw.run()
-    else:
-        print("Target was left stopped.")
-
-print("dwprog exiting")
+if __name__ == "__main__":
+    sys.exit(DWProg().main())

@@ -1,12 +1,14 @@
 # A list isn't the most efficient way to store a potentially sparse set of memory segments, but then
 # again this isn't exactly designed for huge programs.
 
+from debugwire import DWException
+
 MAX_ADDRESS = 0xffff
 
 class memlist(list):
     def write(self, offset, values):
         if offset + len(values) > MAX_ADDRESS:
-            raise Exception("Binary is too large.")
+            raise DWException("Binary is too large.")
 
         while len(self) < offset + len(values):
             self.append(None)
@@ -19,27 +21,27 @@ def parse_hex(f):
 
     for line in f:
         if line[0:1] != b":":
-            raise Exception("Invalid hex line prefix")
+            raise DWException("Invalid hex line prefix")
 
         lb = bytes.fromhex(line.decode("ascii").strip(":\r\n"))
 
         count = lb[0]
         if count + 5 != len(lb):
-            raise Exception("Invalid hex line length")
+            raise DWException("Invalid hex line length")
 
         addr = (lb[1] << 8) | lb[2]
         rtype = lb[3]
 
         checksum = 0x100 - (sum(lb[:-1]) & 0xff)
         if checksum != lb[-1]:
-            raise Exception("Invalid hex line checksum")
+            raise DWException("Invalid hex line checksum")
 
         if rtype == 0x00:
             mem.write(addr, lb[4:-1])
         elif rtype == 0x01:
             break
         else:
-            raise Exception("Unknown hex line")
+            raise DWException("Unknown hex line")
 
     return mem
 
@@ -50,7 +52,7 @@ def parse_elf(f):
     elf = ELFFile(f)
 
     if elf["e_machine"] != "EM_AVR":
-        raise Exception("Invalid ELF architecture")
+        raise DWException("Invalid ELF architecture")
 
     mem = memlist()
 
@@ -70,4 +72,4 @@ def parse_binary(filename):
         elif len(magic) == 9 and magic[0:1] == b":" and magic[7:9] in (b"00", b"01"):
             return parse_hex(f)
         else:
-            raise Exception("Unknown binary file type.")
+            raise DWException("Unknown binary file type.")

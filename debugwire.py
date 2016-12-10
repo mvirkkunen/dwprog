@@ -1,6 +1,9 @@
 import time
 import avrasm as asm
 
+class DWException(Exception):
+    pass
+
 # used as pointer for r/w operations
 REG_Z = 30
 
@@ -36,10 +39,12 @@ class DebugWire:
         self.iface = iface
 
     def open(self):
-        """Open the interface and verify the device signature."""
+        """Open the interface. Returns interface baud rate."""
 
-        self.iface.open()
+        baudrate = self.iface.open()
         self.reset()
+
+        return baudrate
 
     def close(self):
         self.iface.close()
@@ -167,10 +172,10 @@ class DebugWire:
 
     def write_flash_page(self, dev, start, data):
         if start % dev.flash_pagesize != 0:
-            raise Exception("Bad page offset")
+            raise DWException("Bad page offset")
 
         if len(data) != dev.flash_pagesize:
-            raise Exception("Bad page size")
+            raise DWException("Bad page size")
 
         t = time.time()
 

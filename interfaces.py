@@ -1,4 +1,5 @@
 import time
+from debugwire import DWException
 
 def hexdump(data):
     return " ".join("{:02x}".format(b) for b in data)
@@ -42,6 +43,8 @@ class FTDIInterface(BaseInterface):
 
         self.dev.read(1024)
 
+        return self.dev.baudrate
+
     def _detect_baudrate(self):
         # TODO: Maybe make an actual auto-detection algorithm
         for guess in [62500, 12500, 7812, 5000, 6250]:
@@ -51,7 +54,7 @@ class FTDIInterface(BaseInterface):
                 self._log("Baudrate detected as {}".format(guess))
                 return
 
-        raise Exception("Failed to autodetect baudrate.")
+        raise DWException("Failed to autodetect baudrate.")
 
     def close(self):
         if self.dev:
@@ -86,7 +89,7 @@ class FTDIInterface(BaseInterface):
             nwrite += self.dev.write(data[nwrite:])
 
             if time.time() - start >= self.timeout:
-                raise Exception("Write timeout.")
+                raise DWException("Write timeout. Check connections and make sure debugWIRE is enabled.")
 
         self.read(nwrite, _log=False)
 
@@ -98,7 +101,7 @@ class FTDIInterface(BaseInterface):
             buf += self.dev.read(nread - len(buf))
 
             if time.time() - start >= self.timeout:
-                raise Exception("Write timeout.")
+                raise DWException("Read timeout. Check connections and make sure debugWIRE is enabled.")
 
         if _log:
             self._log("<" + hexdump(buf))
@@ -118,7 +121,7 @@ class SerialInterface(BaseInterface):
 
     def open(self):
         if self.baudrate is None:
-            raise Exception("Baud rate must be specified.")
+            raise DWException("Baud rate must be specified for SerialInterface.")
 
         from serial import Serial
 
@@ -129,6 +132,8 @@ class SerialInterface(BaseInterface):
             write_timeout=self.timeout)
 
         self.dev.reset_input_buffer()
+
+        return self.baudrate
 
     def close(self):
         if self.dev:
