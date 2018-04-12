@@ -27,7 +27,6 @@ a debugWIRE disable command to the target.
 * The flashing speed is slow, ranging from 500 to 750 bytes per second depending on the serial
   adapter used. But it's meant for tiny projects anyway.
 * Cannot be used to program fuses.
-* Not available on all AVR devices.
 
 Dependencies
 -------------

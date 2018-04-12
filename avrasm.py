@@ -12,6 +12,12 @@ def in_(addr, reg):
         | ((reg & 0x1f) << 4)
         | (addr & 0x0f))
 
+def ldi(reg, val):
+    return (0xe000
+        | ((val & 0xf0) << 4)
+        | ((reg - 16) << 4)
+        | (val & 0x0f))
+
 def movw(dest, src):
     return (0x0100
         | (((dest >> 1) & 0x0f) << 4)

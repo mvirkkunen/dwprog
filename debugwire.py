@@ -230,13 +230,20 @@ class DebugWire:
             buf = []
 
             for ii in range(ci, ci + CHUNK_LEN, 2):
+                if dev.reg_dwdr:
+                    buf += [
+                        asm.in_(dev.reg_dwdr, 0), bytes([data[ii]]),     # in r0, DWDR ; (low byte)
+                        asm.in_(dev.reg_dwdr, 1), bytes([data[ii + 1]])] # in r1, DWDR ; (high byte)
+                else:
+                    buf += [
+                        asm.ldi(22, data[ii]),                           # ldi r22, (low byte)
+                        asm.ldi(23, data[ii + 1]),                       # ldi r23, (high byte)
+                        asm.movw(0, 22)]                                 # movw r0, r22
 
                 buf += [
-                    asm.in_(dev.reg_dwdr, 0), bytes([data[ii]]),     # in r0, DWDR ; (low byte)
-                    asm.in_(dev.reg_dwdr, 1), bytes([data[ii + 1]]), # in r1, DWDR ; (high byte)
-                    asm.out(dev.reg_spmcsr, 26),                     # out SPMCSR, r26 ; SPMEN
-                    asm.spm(),                                       # spm
-                    asm.adiw(30, 2)]                                 # adiw Z, 2
+                    asm.out(dev.reg_spmcsr, 26),                         # out SPMCSR, r26 ; SPMEN
+                    asm.spm(),                                           # spm
+                    asm.adiw(30, 2)]                                     # adiw Z, 2
 
             self._exec(buf)
 
