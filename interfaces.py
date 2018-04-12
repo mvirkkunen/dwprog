@@ -66,14 +66,14 @@ class FTDIInterface(BaseInterface):
 
         self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 1)
 
-        time.sleep(2000e-6)
+        time.sleep(0.002)
 
         self.dev.ftdi_fn.ftdi_usb_purge_rx_buffer()
         self.dev.read(1024)
 
         self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 0)
 
-        time.sleep(2000e-6)
+        time.sleep(0.002)
 
         return self.read(1)
 
@@ -143,13 +143,13 @@ class SerialInterface(BaseInterface):
     def send_break(self):
         self._log(">break")
 
-        self.dev.send_break(0.002)
-
-        #self.dev.reset_input_buffer()
+        self.dev.break_condition = True
+        time.sleep(0.002)
+        self.dev.break_condition = False
 
         self.read(2)
 
-        time.sleep(200e-6)
+        time.sleep(0.002)
 
     def write(self, data):
         data = bytes(data)
