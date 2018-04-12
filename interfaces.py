@@ -4,17 +4,6 @@ from debugwire import DWException
 def hexdump(data):
     return " ".join("{:02x}".format(b) for b in data)
 
-# Schematic for serial-to-debugWIRE adapter:
-#
-# Serial                   AVR
-#
-#             1k
-# TX   o----/\/\/\--\
-#                    >---o Reset (pull-up should be 10k)
-# RX   o------------/
-#
-# GND  o-----------------o GND
-
 class BaseInterface:
     def __init__(self, enable_log=False):
         self.enable_log = enable_log
