@@ -28,7 +28,6 @@ a debugWIRE disable command to the target.
   adapter used. But it's meant for tiny projects anyway.
 * Cannot be used to program fuses.
 * Not available on all AVR devices.
-* Devices parameters for different chips need to be manually added to devices.py for now.
 
 Dependencies
 -------------
