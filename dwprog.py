@@ -14,8 +14,8 @@ class DWProg:
     def main(self):
         parser = argparse.ArgumentParser()
 
-        #parser.add_argument("-i", "--interface",
-        #    help="interface type (serial:/dev/ttyX, ftdi[:device_id])")
+        parser.add_argument("-p", "--port",
+            help="port for interface to use (default=first USB serial adapter found)")
         parser.add_argument("-b", "--baudrate", type=int, default=None,
             help="communication baudrate (default=autodetect)")
         parser.add_argument("-d", "--device",
@@ -24,6 +24,8 @@ class DWProg:
             help="leave target stopped (default=false)")
         parser.add_argument("-q", "--quiet", action="count",
             help="specify once to hide progress bars, twice to hide everything except errors")
+        parser.add_argument("-v", "--verbose", action="store_true",
+            help="enable debug logging (default=false)")
 
         subp = parser.add_subparsers()
 
@@ -57,10 +59,13 @@ class DWProg:
         self.stop_after_cmd = args.stop
         self.device_id = args.device
 
-        self.log("dwprog starting")
+        self.log("Starting dwprog.")
 
         try:
-            with DebugWire(FTDIInterface(args.baudrate)) as dw:
+            interface = SerialInterface(args.port, args.baudrate, timeout=2, enable_log=args.verbose)
+
+            #with DebugWire(FTDIInterface(args.baudrate)) as dw:
+            with DebugWire(interface, enable_log=args.verbose) as dw:
                 self._dw = dw
                 self._dw_is_open = False
 
@@ -76,7 +81,7 @@ class DWProg:
             self.log_error("ERROR: {}".format(str(ex)))
             return 1
 
-        self.log("dwprog exiting successfully")
+        self.log("Existing dwprog successfully.")
         return 0
 
     def log(self, msg):
@@ -102,10 +107,11 @@ class DWProg:
             self.log("Opening debugWIRE interface...")
 
             if not self._dw.iface.baudrate:
-                self.log("Attempting to auto-detect baudrate.")
+                self.log("Attempting to auto-detect baudrate...")
 
             baudrate = self._dw.open()
-            self.log("Successfully opened at baudrate {}".format(baudrate))
+            self.log("Successfully opened {} at baudrate {}".format(
+                self._dw.iface.port, self._dw.iface.baudrate))
             self.log("")
 
             self._dw_is_open = True

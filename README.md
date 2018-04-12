@@ -10,6 +10,6 @@ extensible.
 Prerequisites
 -------------
 
-* pylibftdi - for the FTDI interface
+* pySerial
 * Optionally:
   * pyelftools - for ELF file support

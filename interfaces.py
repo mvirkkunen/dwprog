@@ -23,36 +23,15 @@ class BaseInterface:
         if self.enable_log:
             print(msg)
 
-class FTDIInterface(BaseInterface):
-    def __init__(self, baudrate, timeout=2, enable_log=False):
-        super().__init__(enable_log)
-
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.dev = None
-
-    def open(self):
-        from pylibftdi.serial_device import SerialDevice
-
-        self.dev = SerialDevice()
-
-        if self.baudrate is None:
-            self._detect_baudrate()
-        else:
-            self.dev.baudrate = self.baudrate
-
-        self.dev.read(1024)
-
-        return self.dev.baudrate
-
+class BaseSerialInterface(BaseInterface):
     def _detect_baudrate(self):
-        # TODO: Maybe make an actual auto-detection algorithm
+        # TODO: Make an actual auto-detection algorithm
         for guess in [62500, 12500, 7812, 5000, 6250]:
             self.dev.baudrate = guess
 
-            if self.send_break() == b"\x55":
+            if 0x55 in self.send_break():
                 self._log("Baudrate detected as {}".format(guess))
-                return
+                return self.dev.baudrate
 
         raise DWException("Failed to autodetect baudrate.")
 
@@ -60,22 +39,6 @@ class FTDIInterface(BaseInterface):
         if self.dev:
             self.dev.close()
             self.dev = None
-
-    def send_break(self):
-        self._log(">break")
-
-        self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 1)
-
-        time.sleep(0.002)
-
-        self.dev.ftdi_fn.ftdi_usb_purge_rx_buffer()
-        self.dev.read(1024)
-
-        self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 0)
-
-        time.sleep(0.002)
-
-        return self.read(1)
 
     def write(self, data):
         data = bytes(data)
@@ -108,9 +71,46 @@ class FTDIInterface(BaseInterface):
 
         return buf
 
-# for some reason pySerial is about four times slower than pylibftdi
+class FTDIInterface(BaseSerialInterface):
+    def __init__(self, baudrate, timeout=2, enable_log=False):
+        super().__init__(enable_log)
 
-class SerialInterface(BaseInterface):
+        self.port = "FTDI"
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self.dev = None
+
+    def open(self):
+        from pylibftdi.serial_device import SerialDevice
+
+        self.dev = SerialDevice()
+
+        if self.baudrate is None:
+            self.baudrate = self._detect_baudrate()
+        else:
+            self.dev.baudrate = self.baudrate
+
+        self.dev.read(1024)
+
+        return self.dev.baudrate
+
+    def send_break(self):
+        self._log(">break")
+
+        self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 1)
+
+        time.sleep(0.002)
+
+        self.dev.ftdi_fn.ftdi_usb_purge_rx_buffer()
+        self.dev.read(1024)
+
+        self.dev.ftdi_fn.ftdi_set_line_property2(8, 0, 0, 0)
+
+        time.sleep(0.002)
+
+        return self.read(1)
+
+class SerialInterface(BaseSerialInterface):
     def __init__(self, port, baudrate, timeout=2, enable_log=False):
         super().__init__(enable_log)
 
@@ -120,25 +120,33 @@ class SerialInterface(BaseInterface):
         self.dev = None
 
     def open(self):
-        if self.baudrate is None:
-            raise DWException("Baud rate must be specified for SerialInterface.")
-
         from serial import Serial
+
+        if self.port is None:
+            self._detect_port()
 
         self.dev = Serial(
             port=self.port,
-            baudrate=self.baudrate,
+            baudrate=self.baudrate or 9600,
             timeout=self.timeout,
             write_timeout=self.timeout)
 
         self.dev.reset_input_buffer()
 
+        if self.baudrate is None:
+            self.baudrate = self._detect_baudrate()
+
         return self.baudrate
 
-    def close(self):
-        if self.dev:
-            self.dev.close()
-            self.dev = None
+    def _detect_port(self):
+        from serial.tools.list_ports import comports
+
+        for p in comports():
+            if p.vid:
+                self.port = p.device
+                break
+        else:
+            raise DWException("Failed to find a USB serial adapter.")
 
     def send_break(self):
         self._log(">break")
@@ -147,30 +155,9 @@ class SerialInterface(BaseInterface):
         time.sleep(0.002)
         self.dev.break_condition = False
 
-        self.read(2)
-
         time.sleep(0.002)
 
-    def write(self, data):
-        data = bytes(data)
-
-        self._log(">"+ hexdump(data))
-
-        nwrite = 0
-        while nwrite < len(data):
-            nwrite += self.dev.write(data[nwrite:])
-
-        self.read(nwrite, _log=False)
-
-    def read(self, nread, _log=True):
-        buf = b""
-        while len(buf) < nread:
-            buf += self.dev.read(nread - len(buf))
-
-        if _log:
-            self._log("<" + hexdump(buf))
-
-        return buf
+        return self.read(2)
 
 interfaces = {
     "serial": SerialInterface,
