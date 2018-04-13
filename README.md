@@ -35,6 +35,34 @@ Dependencies
 * Optionally:
   * pyelftools - for ELF file support
 
+Basic usage
+-----------
+
+```
+dwprog.py -d attiny85 flash program.elf
+```
+
+Flash a program to an ATtiny85. ".hex" files also work.
+
+```
+dwprog.py identify
+```
+
+Detect the target device and report its name.
+
+```
+dwprog.py disable
+```
+
+Disable debugWIRE and re-enable ISP until the next power cycle. If you want to permanently disable
+it, issue the command and then reset the DWPROG fuse using ISP.
+
+```
+dwprog.py --help
+```
+
+Display detailed help and all the command line switches for overriding automatic default behavior.
+
 Hardware
 --------
 
