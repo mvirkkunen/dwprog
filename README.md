@@ -55,7 +55,7 @@ dwprog.py disable
 ```
 
 Disable debugWIRE and re-enable ISP until the next power cycle. If you want to permanently disable
-it, issue the command and then reset the DWPROG fuse using ISP.
+it, issue the command and then reset the DWEN fuse using ISP.
 
 ```
 dwprog.py --help
