@@ -251,11 +251,7 @@ class DWProg:
 
         pages = self.split_into_pages(mem)
 
-        self.log("Writing {0} pages ({1} bytes) to target.".format(
-            len(pages), len(pages) * self.dev.flash_pagesize))
-
         # verify page by page
-
         self.do_verify(pages)
 
         #self.dw.reset()
