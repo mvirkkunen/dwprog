@@ -20,6 +20,7 @@ class DWException(Exception):
 REG_Z = 30
 
 # debugWIRE commands
+START_DW = 0x00
 CMD_DISABLE = 0x06
 CMD_RESET = 0x07
 CMD_GO = 0x20
@@ -55,7 +56,8 @@ class DebugWire:
         """Open the interface. Returns interface baud rate."""
 
         baudrate = self.iface.open()
-        self.reset()
+        self.iface.write([START_DW])
+        reply = self.iface.read(1)      # read 0x55
 
         return baudrate
 
@@ -80,6 +82,10 @@ class DebugWire:
     def run(self):
         """Run the code on the target device."""
 
+        self.iface.write([CMD_RESET])
+        # wait for reset to finish
+        while self.iface.read(1)[0] != 0x55:
+            pass
         self.iface.write([CMD_RUN])
 
     def disable(self):
