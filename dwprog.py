@@ -48,6 +48,9 @@ class DWProg:
         pverify.add_argument("file", help="file (.hex or .elf) to verify")
         pverify.set_defaults(func=self.cmd_verify)
 
+        preadfuses = subp.add_parser("readfuses", help="read and display fuse and lock bits")
+        preadfuses.set_defaults(func=self.cmd_readfuses)
+
         args = parser.parse_args()
         if not hasattr(args, "func"):
             self.log_error("Specify a subcommand.")
@@ -110,9 +113,8 @@ class DWProg:
                 self.log("Attempting to auto-detect baudrate...")
 
             baudrate = self._dw.open()
-            self.log("Successfully opened {} at baudrate {}".format(
+            self.log("Successfully opened {} at baudrate {}\n".format(
                 self._dw.iface.port, self._dw.iface.baudrate))
-            self.log("")
 
             self._dw_is_open = True
 
@@ -169,6 +171,16 @@ class DWProg:
 
         self.log("Target is: {0} (signature 0x{1:04x})"
             .format(dev.name if dev else "Unknown device", sig))
+
+    def cmd_readfuses(self, args):
+        self.log("Reading fuse and lock bits...")
+
+        fuses = self.dw.read_fuses(self.dev)
+
+        self.log("\nFuses: L 0x{0:02X} H 0x{1:02X} E 0x{2:02X}".format(
+            fuses.low_fuse, fuses.high_fuse, fuses.extended_fuse))
+
+        self.log("Lock bits: 0x{0:02X}".format(fuses.lock_bits))
 
     def split_into_pages(self, mem):
         if len(mem) > self.dev.flash_size:

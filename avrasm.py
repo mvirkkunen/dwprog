@@ -1,4 +1,4 @@
-"""Extra simple AVR assembler for complex debugWIRE operations."""
+"""Extra simple AVR assembler used for some debugWIRE operations."""
 
 def adiw(reg, val):
     return (0x9600
@@ -18,6 +18,12 @@ def ldi(reg, val):
         | ((reg - 16) << 4)
         | (val & 0x0f))
 
+def mov(dest, src):
+    return (0x2c00
+        | ((src & 0x10) << 5)
+        | (dest << 4)
+        | (src & 0x0f))
+
 def movw(dest, src):
     return (0x0100
         | (((dest >> 1) & 0x0f) << 4)
@@ -28,6 +34,9 @@ def out(addr, reg):
         | ((addr & 0x30) << 5)
         | ((reg & 0x1f) << 4)
         | (addr & 0x0f))
+
+def lpm():
+    return 0x95c8
 
 def spm():
     return 0x95e8
