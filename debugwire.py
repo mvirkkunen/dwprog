@@ -1,5 +1,6 @@
 import time
 import avrasm as asm
+from collections import namedtuple
 
 class DummyProfiler:
     def step(self, title): pass
@@ -44,6 +45,7 @@ RW_MODE_WRITE_REGS = 0x05
 SPMEN = 0x01
 PGERS = 0x02
 PGWRT = 0x04
+RFLB = 0x08
 CTPB = 0x10
 
 # Mostly everything courtesy of http://www.ruemohr.org/docs/debugwire.html
@@ -266,3 +268,42 @@ class DebugWire:
         self.iface.send_break()
 
         prof.step("Write flash")
+
+    def read_fuses(self, dev):
+        """Reads the fuse and lock bits from the target and returns them as a named tuple."""
+
+        # set up constants
+
+        buf = [
+            asm.ldi(29, RFLB | SPMEN),       # ldi r29, RFLB | SPMEN
+            asm.ldi(31, 0),                  # ldi r31, 0 ; (high byte of Z)
+        ]
+
+        # there are four bytes to read
+
+        for index in reversed(range(4)):
+
+            # read fuse/lock bit into r0
+
+            buf += [
+                asm.ldi(30, index),          # ldi r31, index ; (low byte of Z)
+                asm.out(dev.reg_spmcsr, 29), # out SPMCSR, r29 ; RFLB | SPMEN
+                asm.lpm(),                   # lpm
+            ]
+
+            # move into another register if not reading index 0
+
+            if index != 0:
+                buf += [
+                    asm.mov(index, 0),       # mov r[index], r0
+                ]
+
+        # execute generated code
+
+        self._exec(buf)
+
+        # read r0-r3 which now contain the bytes that were read
+
+        return Fuses(*self.read_regs(0, 4))
+
+Fuses = namedtuple("Fuses", ["low_fuse", "lock_bits", "extended_fuse", "high_fuse"])
