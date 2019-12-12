@@ -252,7 +252,7 @@ class DWProg:
                 self.stop_after_cmd = True
                 return
 
-        self.dw.reset()
+        #self.dw.reset()
 
     def cmd_verify(self, args):
         # parse input binary file
@@ -263,14 +263,10 @@ class DWProg:
 
         pages = self.split_into_pages(mem)
 
-        self.log("Writing {0} pages ({1} bytes) to target.".format(
-            len(pages), len(pages) * self.dev.flash_pagesize))
-
         # verify page by page
-
         self.do_verify(pages)
 
-        self.dw.reset()
+        #self.dw.reset()
 
 if __name__ == "__main__":
     sys.exit(DWProg().main())
